@@ -1,0 +1,983 @@
+#@title config.yaml
+%%writefile /content/Colab-traiNNer/code/config.yaml
+name: template
+scale: 2
+gpus: 1 # amount of gpus, 0 = cpu
+distributed_backend: ddp # dp, ddp (for multi-gpu training)
+tpu_cores: 8 # 8 if you use a Google Colab TPU
+use_tpu: False
+use_amp: True
+use_swa: False
+progress_bar_refresh_rate: 20
+default_root_dir: '/content/drive/MyDrive/Colab-BasicSR/realesrgan2x_6b_attention_unet/'
+
+# Dataset options:
+datasets:
+  train:
+    # DS_inpaint: hr is from dataroot_HR, loads masks
+    # DS_lrhr: loads lr from dataroot_LR and hr from dataroot_HR
+    # DS_video: video dataloader which has 3 frames as input (look into data/data_video.py for more details)
+    # DS_inpaint_TF: takes one tfrecord file as dataset input, but the validation is still just green masked images like in DS_inpaint
+    # DS_video_direct: direcly copy .npy files into GPU and avoiding CPU processing (upgrade to newest nvidia drivers and cuda, linux only)
+    # only works with n_workers = 0, use pipeline_threads instead
+    # DS_realesrgan: will use the realesrgan dataloader (only uses hr folder)
+    # pip install --extra-index-url https://developer.download.nvidia.com/compute/redist --upgrade nvidia-dali-cuda110
+
+    mode: DS_realesrgan # DS_video | DS_video_direct | DS_inpaint_TF | DS_inpaint  | DS_lrhr | DS_realesrgan
+    amount_files: 7 # tfrecord files do not store amount of images and are infinite, specify the images inside of it
+
+    tfrecord_path: "/content/tfrecord/tfrecord-r09.tfrecords"
+    dataroot_HR: '/content/ramdisk/' # Original, with a single directory. Inpainting will use this directory as source image.
+    dataroot_LR: '/content/lr/' # Original, with a single directory
+    loading_backend: 'OpenCV' # 'PIL' | 'OpenCV' | 'turboJPEG' # install needed for turboJPEG, turboJPEG only for DS_video, 'PIL' for DS_inpaint_TF
+
+    n_workers: 8 # 0 to disable CPU multithreading, or an integrer representing CPU threads to use for dataloading
+    pipeline_threads: 16 # only for DS_video_direct
+    batch_size: 12 # 13
+    
+    # does not apply to video dataloaders, look into python file instead
+    HR_size: 256 # The resolution the network will get. Random crop gets applied if that resolution does not match.
+    image_channels: 3 # number of channels to load images in
+
+    masks: '/content/masks/' # only for inpainting
+    mask_invert_ratio: 0.3 # 0.3 = 30% of masks will be inverted
+    max_epochs: 100000
+    save_step_frequency: 5000 # also validation frequency
+
+    # if edge data is required
+    canny_min: 100
+    canny_max: 150
+
+    # OTF downscaling
+    # This will downscale the HR image with a randomly chosen filter and ignore the LR folder.
+    # otf_filter_probs defines the cumulative (additive) weights used to select a downscaling filter
+    # KERNEL will randomly apply one of the kernels generated using
+    # https://github.com/victorca25/DLIP/tree/main/kgan
+    apply_otf_downscale: False
+    otf_filter_types: ['KERNEL', 'NEAREST', 'BILINEAR', 'AREA', 'BICUBIC', 'LANCZOS']
+    otf_filter_probs: [0.25, 0.4, 0.55, 0.70, 0.85, 1.0]
+    kernel_path: '/content/kernels'
+
+    # Image augmentations (only for lrhr dataloader). Set 'True' to use.
+    # To customize individual augmentations, edit aug_config.yaml.
+    # Augmentations will apply in random order.
+    ColorJitter: False
+    RandomGaussianNoise: False
+    RandomPoissonNoise: False
+    RandomSPNoise: False
+    RandomSpeckleNoise: False
+    RandomCompression: False
+    RandomAverageBlur: False
+    RandomBilateralBlur: False
+    RandomBoxBlur: False
+    RandomGaussianBlur: False
+    RandomMedianBlur: False
+    RandomMotionBlur: False
+    RandomComplexMotionBlur: False
+    RandomAnIsoBlur: False
+    RandomSincBlur: False
+    BayerDitherNoise: False
+    FSDitherNoise: False
+    FilterMaxRGB: False
+    FilterColorBalance: False
+    FilterUnsharp: False
+    FilterCanny: False
+    SimpleQuantize: False
+    KMeansQuantize: False
+    CLAHE: False
+    RandomGamma: False
+    Superpixels: False
+    RandomCameraNoise: False
+
+  val:
+    loading_backend: 'OpenCV' # 'OpenCV' | 'turboJPEG' # install needed for turboJPEG, currently only for DS_video
+    dataroot_HR: '/content/drive/MyDrive/Colab-BasicSR/sr_input/'
+    dataroot_LR: '/content/drive/MyDrive/Colab-BasicSR/sr_input/' # Inpainting will use this directory as input
+
+path:
+    pretrain_model_G: #"/content/drive/MyDrive/Colab-BasicSR/realesrgan2x_6b_attention_unet/pretrain57_11.291_(DROPOUT)/Checkpoint_20_11291_G.pth"
+    pretrain_model_G_teacher: 
+    pretrain_model_D: #"/content/drive/MyDrive/Colab-BasicSR/realesrgan2x_6b_attention_unet/pretrain57_11.291_(DROPOUT)/Checkpoint_20_11291_D.pth"
+    checkpoint_path: "/content/drive/MyDrive/Colab-BasicSR/realesrgan2x_6b_attention_unet/checkpoints/epoch=1327-step=414994.ckpt"
+    checkpoint_save_path: '/content/drive/MyDrive/Colab-BasicSR/realesrgan2x_6b_attention_unet/'
+    validation_output_path: '/content/drive/MyDrive/Colab-BasicSR/realesrgan2x_6b_attention_unet/validation'
+    log_path: '/content/drive/MyDrive/Colab-BasicSR/realesrgan2x_6b_attention_unet/logs'
+network_G_teacher:
+    netG:
+# Generator options:
+network_G:
+    # CEM (for esrgan, not 1x)
+    CEM: False # uses hardcoded torch.cuda.FloatTensor
+    sigmoid_range_limit: False
+
+    finetune: False # Important for further rfr/dsnet training. Apply that after training for a while. https://github.com/jingyuanli001/RFR-Inpainting/issues/33
+
+    # ESRGAN:
+    netG: RRDB_net # RRDB_net (original ESRGAN arch) | MRRDB_net (modified/"new" arch)
+    norm_type: null
+    mode: CNA
+    nf: 64 # of discrim filters in the first conv layer (default: 64, good: 32)
+    nb: 6 # (default: 23, good: 8)
+    in_nc: 3 # of input image channels: 3 for RGB and 1 for grayscale
+    out_nc: 3 # of output image channels: 3 for RGB and 1 for grayscale
+    gc: 32
+    group: 1
+    # conv only applies to RRDB_net and not MRRDB_net
+    convtype: Conv2D # Conv2D | PartialConv2D | doconv | gated | TBC | dynamic | MBConv | CondConv | fft | WSConv
+    net_act: leakyrelu # swish | leakyrelu
+    gaussian: false # true | false # esrgan plus, does not work on TPU because of cuda()
+    plus: false # true | false
+    finalact: None #tanh # Test. Activation function to make outputs fit in [-1, 1] range. Default = None. Coordinate with znorm.
+    upsample_mode: 'upconv'
+    nr: 3
+    ## for dynamic
+    nof_kernels: 4
+    reduce: 4
+    strided_conv: False
+
+    # ASRGAN:
+    #which_model_G: asr_resnet # asr_resnet | asr_cnn
+    #nf: 64
+
+    # PPON:
+    #netG: ppon # | ppon
+    ##norm_type: null
+    #mode: CNA
+    #nf: 64
+    #nb: 24
+    #in_nc: 3
+    #out_nc: 3
+    ##gc: 32
+    #group: 1
+    ##convtype: Conv2D #Conv2D | PartialConv2D
+
+    # SRGAN:
+    #netG: sr_resnet # RRDB_net | sr_resnet
+    #norm_type: null
+    #mode: CNA
+    #nf: 64
+    #nb: 16
+    #in_nc: 3
+    #out_nc: 3
+
+    # SR:
+    #netG: RRDB_net # RRDB_net | sr_resnet
+    #norm_type: null
+    #mode: CNA
+    #nf: 64
+    #nb: 23
+    #in_nc: 3
+    #out_nc: 3
+    #gc: 32
+    #group: 1
+
+    # PAN:
+    # netG: pan_net
+    # in_nc: 3
+    # out_nc: 3
+    # nf: 40
+    # unf: 24
+    # nb: 16
+    # self_attention: true
+    # double_scpa: false
+
+    # edge-informed-sisr
+    #which_model_G: sisr
+    #use_spectral_norm: True
+
+    # USRNet
+    #netG: USRNet
+    #in_nc=4
+    #out_nc=3
+    #nc=[64, 128, 256, 512]
+    #nb=2
+    #act_mode='R'
+    #downsample_mode='strideconv'
+    #upsample_mode='convtranspose'
+
+    # GLEAN (2021)
+    # Warning: Does require "pip install mmcv-full"
+    #netG: GLEAN
+    #in_size: 512
+    #out_size: 512
+    #img_channels: 4
+    #img_channels_out: 3
+    #rrdb_channels: 16 # 64
+    #num_rrdbs: 8 # 23
+    #style_channels: 512 # 512
+    #num_mlps: 4 # 8
+    #channel_multiplier: 2
+    #blur_kernel: [1, 3, 3, 1]
+    #lr_mlp: 0.01
+    #default_style_mode: 'mix'
+    #eval_style_mode: 'single'
+    #mix_prob: 0.9
+    #pretrained: False # only works with official settings
+    #bgr2rgb: False
+
+    # srflow (upscaling factors: 4, 8, 16)
+    # Warning: Can be very unstable with batch_size 1, use higher batch_size
+    #netG: srflow
+    #in_nc: 3
+    #out_nc: 3
+    #nf: 64
+    #nb: 23
+    #train_RRDB: false
+    #train_RRDB_delay: 0.5
+    #flow:
+    #  K: 16
+    #  L: 3
+    #  noInitialInj: true
+    #  coupling: CondAffineSeparatedAndCond
+    #  additionalFlowNoAffine: 2
+    #  split:
+    #    enable: true
+    #  fea_up0: true
+    #  stackRRDB:
+    #    blocks: [ 1, 8, 15, 22 ]
+    #    concat: true
+    #nll_weight: 1
+    #freeze_iter: 100000
+
+    # DFDNet
+    # Warning: Expects "DictionaryCenter512" in the current folder, you can get the data here: https://drive.google.com/drive/folders/1bayYIUMCSGmoFPyd4Uu2Uwn347RW-vl5
+    # Also wants a folder called "landmarks", you can generate that data yourself. Example: https://github.com/styler00dollar/Colab-DFDNet/blob/local/Colab-DFDNet-lightning-train.ipynb
+    # Hardcoded resolution: 512px
+    #netG: DFDNet
+    #dictionary_path: "/content/DictionaryCenter512"
+    #landmarkpath: "/content/landmarks"
+    #val_landmarkpath: "/content/landmarks"
+
+    # GFPGAN (2021) [EXPERIMENTAL]
+    # does require ninja
+    # because it compiles files, the startup time is quite long
+    #netG: GFPGAN
+    #input_channels: 4
+    #output_channels: 3
+    #out_size: 512
+    #num_style_feat: 512
+    #channel_multiplier: 1
+    #resample_kernel: [1, 3, 3, 1]
+    #decoder_load_path: # None
+    #fix_decoder: True
+    #num_mlp: 8
+    #lr_mlp: 0.01
+    #input_is_latent: False
+    #different_w: False
+    #narrow: 1
+    #sft_half: False
+
+    # GPEN
+    # does require ninja
+    # because it compiles files, the startup time is quite long
+    # output_channels is hardcoded to 3
+    #netG: GPEN
+    #input_channels: 4
+    #size: 512
+    #style_dim: 512
+    #n_mlp: 8
+    #channel_multiplier: 2
+    #blur_kernel: [1, 3, 3, 1]
+    #lr_mlp: 0.01
+    #pooling: True # Experimental, to have any input size
+
+    # comodgan (2021)
+    # needs ninja
+    # because it compiles files, the startup time is quite long
+    #netG: comodgan
+    #dlatent_size: 512
+    #num_channels: 3 # amount of channels without mask
+    #resolution: 512
+    #fmap_base: 16384 # 16 << 10
+    #fmap_decay: 1.0
+    #fmap_min: 1
+    #fmap_max: 512
+    #randomize_noise: True
+    #architecture: 'skip'
+    #nonlinearity: 'lrelu'
+    #resample_kernel: [1,3,3,1]
+    #fused_modconv: True
+    #pix2pix: False
+    #dropout_rate: 0.5
+    #cond_mod: True
+    #style_mod: True
+    #noise_injection: True
+
+    # swinir (2021)
+    #netG: swinir
+    #img_size: 64
+    #patch_size: 1
+    #upscale: 2
+    #in_chans: 3
+    #window_size: 8
+    #img_range: 1.
+    #depths: [6, 6, 6, 6, 6, 6]
+    #embed_dim: 180
+    #num_heads: [6, 6, 6, 6, 6, 6]
+    #mlp_ratio: 2
+    #upsampler: 'pixelshuffle'
+    #resi_connection: '1conv'
+
+    # ESRT (2021)
+    #netG: ESRT
+    #hiddenDim: 32
+    #mlpDim: 128
+
+    # RealESRGAN Anime Compact model (2021)
+    #netG: SRVGGNetCompact
+    #num_in_ch: 3
+    #num_out_ch: 3
+    #num_feat: 64
+    #num_conv: 16
+    #upscale: 4
+    #act_type: 'prelu'
+
+    # ----Inpainting Generators----
+    # DFNet (batch_size: 2+, needs 2^x image input and validation) (2019)
+    #netG: DFNet
+    #c_img: 3
+    #c_mask: 1
+    #c_alpha: 3
+    #mode: nearest
+    #norm: batch
+    #act_en: relu
+    #act_de: leaky_relu
+    #en_ksize: [7, 5, 5, 3, 3, 3, 3, 3]
+    #de_ksize: [3, 3, 3, 3, 3, 3, 3, 3]
+    #blend_layers: [0, 1, 2, 3, 4, 5]
+    #conv_type: normal # partial | normal | deform
+    
+
+    # EdgeConnect (2019)
+    #netG: EdgeConnect
+    #use_spectral_norm: True
+    #residual_blocks_edge: 8
+    #residual_blocks_inpaint: 8
+    #conv_type_edge: 'normal' # normal | partial | deform (has no spectral_norm)
+    #conv_type_inpaint: 'normal' # normal | partial | deform
+
+    # CSA (2019)
+    #netG: CSA
+    #c_img: 3
+    #norm: 'instance'
+    #act_en: 'leaky_relu'
+    #act_de: 'relu'
+
+    # RN (2020)
+    #netG: RN
+    #input_channels: 3
+    #residual_blocks: 8
+    #threshold: 0.8
+
+    # deepfillv1 (2018)
+    #netG:  deepfillv1
+
+    # deepfillv2 (2019)
+    #netG: deepfillv2
+    #in_channels:  4
+    #out_channels:  3
+    #latent_channels:  64
+    #pad_type:  'zero'
+    #activation:  'lrelu'
+    #norm: 'in'
+    #conv_type: partial # partial | normal
+
+    # Adaptive (2020)
+    #netG: Adaptive
+    #in_channels: 3
+    #residual_blocks: 1
+    #init_weights: True
+
+    # Global (2020)
+    #netG: Global
+    #input_dim: 5
+    #ngf: 32
+    #use_cuda: True
+    #device_ids: [0]
+
+    # Pluralistic (2019)
+    #netG: Pluralistic
+    #ngf_E: 32
+    #z_nc_E: 128
+    #img_f_E: 128
+    #layers_E: 5
+    #norm_E: 'none'
+    #activation_E: 'LeakyReLU'
+    #ngf_G: 32
+    #z_nc_G: 128
+    #img_f_G: 128
+    #L_G: 0
+    #output_scale_G: 1
+    #norm_G: 'instance'
+    #activation_G: 'LeakyReLU'
+
+    # crfill (2020)
+    #netG: crfill
+    #cnum: 48
+
+    # DeepDFNet (experimental)
+    #netG: DeepDFNet
+    #in_channels:  4
+    #out_channels:  3
+    #latent_channels:  64
+    #pad_type:  'zero'
+    #activation:  'lrelu'
+    #norm: 'in'
+
+    # partial (2018)
+    #netG: partial
+
+    # DMFN (2020)
+    #netG: DMFN
+    #in_nc: 4
+    #out_nc: 3
+    #nf: 64
+    #n_res: 8
+    #norm: 'in'
+    #activation: 'relu'
+
+    # pennet (2019)
+    #netG: pennet
+
+    # LBAM (2019)
+    #netG: LBAM
+    #inputChannels: 4
+    #outputChannels: 3
+
+    # RFR (use_swa: false, no TPU) (2020)
+    #netG: RFR
+    #conv_type: partial # partial | deform
+
+    # FRRN (2019)
+    #netG: FRRN
+
+    # PRVS (2019)
+    #netG: PRVS
+
+    # CRA (HR_size: 512) (2020)
+    #netG: CRA
+    #activation: 'elu'
+    #norm: 'none'
+
+    # atrous (2020)
+    #netG: atrous
+
+    # MEDFE (batch_size: 1) (2020)
+    #netG: MEDFE
+
+    # AdaFill (2021)
+    #netG: AdaFill
+
+    # lightweight_gan (2021)
+    #netG: lightweight_gan
+    #image_size: 512
+    #latent_dim: 256
+    #fmap_max: 512
+    #fmap_inverse_coef: 12
+    #transparent: False
+    #greyscale: False
+    #freq_chan_attn: False
+
+    # CTSDG (2021)
+    #netG: CTSDG
+
+    # lama (2022) (no AMP)
+    #netG: lama
+
+    # MST (2021)
+    #netG: MST
+
+    # ----Interpolation Generators----
+    # cain (2020)
+    #netG: CAIN
+    #depth: 3
+    #conv: WSConv # doconv | conv2d | gated | TBC | dynamic | MBConv | Involution | CondConv | fft | WSConv
+    # Warning: Configure OutlookAttention dimension according to resolution manually (160 for 720p)
+    #attention: CA # CA | OutlookAttention | A2Atttention | CBAM | CoTAttention | CoordAttention | ECAAttention | HaloAttention | ParNetAttention | TripletAttention | SKAttention | SGE | SEAttention | PolarizedSelfAttention
+    #RG: 2 # ResidualGroup amount
+    ## for dynamic
+    #nof_kernels: 4
+    #reduce: 4
+
+    # rife 4.0
+    #netG: rife
+    #conv: conv2d # doconv | conv2d | gated | TBC | dynamic | MBConv | fft | WSConv
+    ## for dynamic
+    #nof_kernels: 4
+    #reduce: 4
+
+    # RRIN (2020)
+    #netG: RRIN
+
+    # ABME (2021)
+    #netG: ABME
+
+    # EDSC (2021) (2^x image size)
+    # pip install cupy
+    #netG: EDSC
+
+    # sepconv enhanced (2021) (needs cupy)
+    #netG: sepconv_enhanced
+
+    # AdaCoFNet (compressed) / CDFI (2021) (needs cupy)
+    #netG: CDFI
+
+    #-----------Misc---------------
+    # Restormer (2021) (1x model)
+    #netG: restormer
+    #inp_channels: 3
+    #out_channels: 3
+    #dim: 48
+    #num_blocks: [4,6,6,8]
+    #num_refinement_blocks: 4
+    #heads: [1,2,4,8]
+    #ffn_expansion_factor: 2.66
+    #bias: False
+    #LayerNorm_type: 'WithBias' # 'WithBias' | 'BiasFree'
+
+# Discriminator options:
+network_D:
+    discriminator_criterion: MSE # MSE
+
+    d_loss_fool_weight: 1 # inside the generator loop, trying to fool the disciminator
+    d_loss_weight: 1 # inside own discriminator update
+    
+    # needs "pip3 install git+https://github.com/vballoli/nfnets-pytorch"
+    WSConv_replace: True
+
+    #netD: # in case there is no discriminator, leave it empty
+
+    # VGG
+    #netD: VGG
+    #size: 256
+    #in_nc: 3 #3
+    #base_nf: 64
+    #norm_type: 'batch'
+    #act_type: 'leakyrelu'
+    #mode: 'CNA'
+    #convtype: 'Conv2D'
+    #arch: 'ESRGAN'
+
+    # VGG fea
+    #netD: VGG_fea
+    #size: 256
+    #in_nc: 3
+    #base_nf: 64
+    #norm_type: 'batch'
+    #act_type: 'leakyrelu'
+    #mode: 'CNA'
+    #convtype: 'Conv2D'
+    #arch: 'ESRGAN'
+    #spectral_norm: False
+    #self_attention: False
+    #max_pool: False
+    #poolsize: 4
+
+
+    #netD: VGG_128_SN
+
+    # VGGFeatureExtractor
+    #netD: VGGFeatureExtractor
+    #feature_layer: 34
+    #use_bn: False
+    #use_input_norm: True
+    #device: 'cpu'
+    #z_norm: False
+
+    # PatchGAN
+    #netD: NLayerDiscriminator
+    #input_nc: 3
+    #ndf: 64
+    #n_layers: 3
+    #norm_layer: nn.BatchNorm2d
+    #use_sigmoid: False
+    #getIntermFeat: False
+    #patch: True
+    #use_spectral_norm: False
+
+    # Multiscale
+    #netD: MultiscaleDiscriminator
+    #input_nc: 3
+    #ndf: 64
+    #n_layers: 3
+    #norm_layer: nn.BatchNorm2d
+    #use_sigmoid: False
+    #num_D: 3
+    #get_feats: False
+
+    #netD: ResNet101FeatureExtractor
+    #use_input_norm: True
+    #device: 'cpu'
+    #z_norm: False
+
+    # MINC
+    #netD: MINCNet
+
+    # Pixel
+    #netD: PixelDiscriminator
+    #input_nc: 3
+    #ndf: 64
+    #norm_layer: nn.BatchNorm2d
+
+    # EfficientNet (3-channel input)
+    #netD: EfficientNet
+    #EfficientNet_pretrain: 'efficientnet-b0'
+    #num_classes: 1 # should be 1
+
+    # ResNeSt (not working)
+    #netD: ResNeSt
+    #ResNeSt_pretrain: 'resnest50' # ["resnest50", "resnest101", "resnest200", "resnest269"]
+    #pretrained: False # cant be true currently
+    #num_classes: 1
+
+    # Transformer (not working)
+    #netD: TranformerDiscriminator
+    #img_size: 256
+    #patch_size: 1
+    #in_chans: 3
+    #num_classes: 1
+    #embed_dim: 64
+    #depth: 7
+    #num_heads: 4
+    #mlp_ratio: 4.
+    #qkv_bias: False
+    #qk_scale: None
+    #drop_rate: 0.
+    #attn_drop_rate: 0.
+    #drop_path_rate: 0.
+    #hybrid_backbone: None
+    #norm_layer: 
+
+    # context_encoder (num_classes can't be set, broadcasting warning will be shown, training works, but I am not sure if it will work correctly)
+    #netD: context_encoder
+
+    # Transformer (doesn't do init)
+    #netD: ViT
+    #image_size: 256
+    #patch_size: 32
+    #num_classes: 1
+    #dim: 1024
+    #depth: 6
+    #heads: 16
+    #mlp_dim: 2048
+    #dropout: 0.1
+    #emb_dropout: 0.1
+
+    # Transformer (doesn't do init)
+    #netD: DeepViT
+    #image_size: 256
+    #patch_size: 32
+    #num_classes: 1
+    #dim: 1024
+    #depth: 6
+    #heads: 16
+    #mlp_dim: 2048
+    #dropout: 0.1
+    #emb_dropout: 0.1
+
+    # RepVGG
+    #netD: RepVGG
+    #RepVGG_arch: RepVGG-A0 # RepVGG-A0, RepVGG-A1, RepVGG-A2, RepVGG-B0, RepVGG-B1, RepVGG-B1g2, RepVGG-B1g4, , RepVGG-B2, RepVGG-B2g2, RepVGG-B2g4, RepVGG-B3, RepVGG-B3g2, RepVGG-B3g4
+    #num_classes: 1
+
+    # squeezenet
+    #netD: squeezenet
+    #version: "1_1" # 1_0, 1_1
+    #num_classes: 1
+
+    # SwinTransformer (doesn't do init)
+    #netD: SwinTransformer
+    #hidden_dim: 96
+    #layers: [2, 2, 6, 2]
+    #heads: [3, 6, 12, 24]
+    #channels: 3
+    #num_classes: 1
+    #head_dim: 32
+    #window_size: 8
+    #downscaling_factors: [4, 2, 2, 2]
+    #relative_pos_embedding: True
+
+    # mobilenetV3 (doesn't do init)
+    #netD: mobilenetV3
+    #mode: small # small, large
+    #n_class: 1
+    #input_size: 256
+
+    # resnet
+    #netD: resnet
+    #resnet_arch: resnet50 # resnet50, resnet101, resnet152
+    #num_classes: 1
+    #pretrain: True
+  
+    # NFNet
+    #netD: NFNet
+    #num_classes: 1
+    #variant: 'F0'         # F0 - F7
+    #stochdepth_rate: 0.25 # 0-1, the probability that a layer is dropped during one step
+    #alpha: 0.2            # Scaling factor at the end of each block
+    #se_ratio: 0.5         # Squeeze-Excite expansion ratio
+    #activation: 'gelu'    # or 'relu'
+
+    # lvvit (2021)
+    # Warning: Needs 'pip install timm==0.4.5'
+    #netD: lvvit
+    #img_size: 224
+    #patch_size: 16
+    #in_chans: 3
+    #num_classes: 1
+    #embed_dim: 768
+    #depth: 12
+    #num_heads: 12
+    #mlp_ratio: 4.
+    #qkv_bias: False
+    #qk_scale: # None
+    #drop_rate: 0.
+    #attn_drop_rate: 0.
+    #drop_path_rate: 0.
+    #drop_path_decay: 'linear'
+    #hybrid_backbone: # None
+    ##norm_layer: nn.LayerNorm # Deafault: nn.LayerNorm / can't be configured
+    #p_emb: '4_2'
+    #head_dim: # None
+    #skip_lam: 1.0
+    #order: # None
+    #mix_token: False
+    #return_dense: False
+
+    # timm
+    # pip install timm
+    # you can loop up models here: https://rwightman.github.io/pytorch-image-models/
+    #netD: timm
+    #timm_model: "tf_efficientnetv2_b0"
+
+    #netD: resnet3d
+    #model_depth: 50 # [10, 18, 34, 50, 101, 152, 200]
+
+    # from lama (2021)
+    #netD: FFCNLayerDiscriminator
+    #FFCN_feature_weight: 1
+
+    #netD: effV2
+    #conv: fft # fft | conv2d
+    #size: s # s | m | l | xl
+
+    # x-transformers
+    # pip install x-transformers
+    #netD: x_transformers
+    #image_size: 512
+    #patch_size: 32
+    #dim: 512
+    #depth: 6
+    #heads: 8
+
+    #netD: mobilevit
+    #size: xxs # xxs | xs | s
+
+    # because of too many parameters, a seperate config file named "hrt_config.yaml" is available
+    #netD: hrt
+
+    # Attention U-Net (from asergan) (2021)
+    netD: attention_unet
+    num_in_ch: 3
+    num_feat: 64
+    skip_connection: True
+
+    # U-Net (from RealESRGAN) (2021)
+    #netD: unet
+    #num_in_ch: 3
+    #num_feat: 64
+    #skip_connection: True
+
+train: 
+    # Adam8bit needs "pip install bitsandbytes-cuda111"
+    # SGD_AGC needs "pip3 install git+https://github.com/vballoli/nfnets-pytorch"
+    scheduler: AdamP # Adam, AdamP, Adam, SGDP, MADGRAD, Adam8bit, SGD_AGC, cosangulargrad [maybe broken], tanangulargrad [maybe broken]
+    # ACG needs "pip3 install git+https://github.com/vballoli/nfnets-pytorch"
+    AGC: False # currently only for generator, only works with certain optimizers
+    lr_g: 0.000025 # 0.0001
+    lr_d: 0.000025
+    
+    # AdamP, AGDP, MADGRAD, SGD_AGC, cosangulargrad, tanangulargrad
+    weight_decay: 0.01
+
+    # SGDP, MAGDRAD
+    momentum: 0.9
+
+    # AdamP, cosangulargrad, tanangulargrad
+    betas0: 0.9
+    betas1: 0.999
+    
+    # SGDP
+    nesterov: True
+
+    # MADGRAD, SGD_AGC, cosangulargrad, tanangulargrad
+    eps: 1e-6
+
+    ############################
+
+    # Losses:
+    L1Loss_weight: 0
+
+    # HFENLoss
+    HFEN_weight: 0
+    loss_f: L1CosineSim # L1Loss | L1CosineSim
+    kernel: 'log'
+    kernel_size: 15
+    sigma: 2.5
+    norm: False
+
+    # Elastic
+    Elastic_weight: 0
+    a: 0.2
+    reduction_elastic: 'mean'
+
+    # Relative L1
+    Relative_l1_weight: 0
+    l1_eps: .01
+    reduction_relative: 'mean'
+
+    # L1CosineSim (3-channel input)
+    L1CosineSim_weight: 0
+    loss_lambda: 5
+    reduction_L1CosineSim: 'mean'
+
+    # ClipL1
+    ClipL1_weight: 0
+    clip_min: 0.0
+    clip_max: 10.0
+
+    # FFTLoss
+    FFTLoss_weight: 0
+    loss_f_fft: L1Loss
+    reduction_fft: 'mean'
+
+    OFLoss_weight: 0
+
+    # GPLoss
+    GPLoss_weight: 0
+    gp_trace: False
+    gp_spl_denorm: False
+
+    # CPLoss
+    CPLoss_weight: 0
+    rgb: True
+    yuv: True
+    yuvgrad: True
+    cp_trace: False
+    cp_spl_denorm: False
+    yuv_denorm: False
+
+    # TVLoss
+    TVLoss_weight: 0
+    tv_type: 'tv'
+    p: 1
+
+    # Contextual_Loss (3-channel input)
+    Contextual_weight: 0.1
+    crop_quarter: False
+    max_1d_size: 100
+    distance_type: 'cosine' # ["11", "l2", "consine"]
+    b: 1.0
+    band_width: 0.5
+    # for vgg
+    use_vgg: False
+    net_contextual: 'vgg19'
+    layers_weights: {'conv_1_1': 1.0, 'conv_3_2': 1.0}
+    # for timm
+    use_timm: True
+    timm_model: "tf_efficientnetv2_b0"
+    # for both
+    calc_type: 'regular' # ["bilateral" | "symetric" | None]
+
+    # Style (3-channel input)
+    StyleLoss_weight: 0
+
+    # PerceptualLoss
+    perceptual_weight: 0
+    net: PNetLin # PNetLin, DSSIM (?)
+    pnet_type: 'vgg' # alex, squeeze, vgg
+    pnet_rand: False
+    pnet_tune: False
+    use_dropout: True
+    spatial: False
+    version: '0.1' # only version
+    lpips: True
+    force_fp16_perceptual: False # not supported for cpu
+    # you need to have tensorrt and torch_tensorrt, use docker or install it manually
+    # adjust optimum model compile values in CustomTrainClass
+    # fp16 will only work on fp16 compatible hardware, convert will only work with a GPU, FP16 untested
+    perceptual_tensorrt: False 
+
+
+    # high receptive field (HRF) perceptual loss
+    # you can download it manually with this command, but the code will download it automatically if you don't have it
+    # wget -P /content/ http://sceneparsing.csail.mit.edu/model/pytorch/ade20k-resnet50dilated-ppm_deepsup/encoder_epoch_20.pth
+    hrf_perceptual_weight: 1
+    force_fp16_hrf: True # not supported for cpu
+
+    ColorLoss_weight: 0 # converts rgb to yuv and calculates l1, expected input is rgb
+    FrobeniusNormLoss_weight: 0
+    GradientLoss_weight: 0
+    MultiscalePixelLoss_weight: 0
+    SPLoss_weight: 0
+    FFLoss_weight: 0
+
+    # only if the network outputs 2 images, will use l1
+    stage1_weight: 0 
+
+    Lap_weight: 0
+
+    # pytorch loss functions
+    MSE_weight: 0
+    BCE_weight: 0
+    Huber_weight: 1
+    SmoothL1_weight: 0
+
+    # piq loss
+    SSIMLoss_weight: 0
+    MultiScaleSSIMLoss_weight: 0
+    VIFLoss_weight: 0
+    FSIMLoss_weight: 0 # unstable
+    GMSDLoss_weight: 0 # unstable
+    MultiScaleGMSDLoss_weight: 0 # unstable
+    VSILoss_weight: 0 # unstable
+    HaarPSILoss_weight: 0
+    MDSILoss_weight: 0 # unstable
+    BRISQUELoss_weight: 0 # unstable
+    PieAPP_weight: 0
+    DISTS_weight: 0
+    # the losses below require a GPU
+    # may be changed in the future, to have custom feature extractors
+    IS_weight: 0 # unstable
+    FID_weight: 0
+    KID_weight: 0
+    PR_weight: 0 # only fp32
+    # todo(?): LPIPS
+    force_piq_fp16: True
+
+    # loss for CTSDG
+    CTSDG_edge_weight: 0 #0.01
+    CTSDG_projected_weight: 0 #0.1
+
+    # loss for rife
+    SOBEL_weight: 0 # not recommended, leave it at 0
+
+    # Three different augmentation options, diffaug and muaraugment apply to both training loops,
+    # while batch_aug only applies to the discriminator training loop
+    augmentation_method: batch_aug # diffaug, MuarAugment, batch_aug, None
+    # diffaug
+    policy: 'color,translation,cutout'
+    # MuarAugment
+    N_TFMS: 3 # Number of transformations
+    MAGN: 3 # Magnitude of augmentation applied
+    N_COMPS: 4 # Number of compositions placed on each image
+    N_SELECTED: 2 # Number of selected compositions for each image
+    # batch_aug
+    mixopts: ["blend", "rgb", "mixup", "cutmix", "cutmixup", "cutout"]
+    mixprob: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # , 1.0]
+    mixalpha: [0.6, 1.0, 1.2, 0.7, 0.7, 0.001]  # , 0.7]
+    aux_mixprob: 1.0
+    aux_mixalpha: 1.2
+
+    # Metrics
+    metrics: [] # PSNR | SSIM | AE | MSE
